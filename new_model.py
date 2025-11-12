@@ -276,11 +276,6 @@ for i, e in enumerate(E):
 
 m.ModelSense = GRB.MINIMIZE
 
-# (opcional) tornar a lexicografia mais “rígida”
-m.Params.MultiObjMethod = 1
-m.Params.MultiObjPre    = 2
-m.Params.ObjNAbsTol     = 0.0
-m.Params.ObjNRelTol     = 0.0
 
 # -------------------------------------------------------------
 # 8) OTIMIZAÇÃO
@@ -290,18 +285,78 @@ m.optimize()
 # -------------------------------------------------------------
 # 9) RELATÓRIO DE SAÍDA
 # -------------------------------------------------------------
-if m.status in (GRB.OPTIMAL, GRB.INTERRUPTED):
-    print(f"Nível 0 (turnos não alocados) -> valor: {m.ObjNVal}")
-    for k in range(1, m.NumObj):
-        m.params.ObjNumber = k
-        print(f"  Nível {k} -> valor: {m.ObjNVal}")
+# if m.status in (GRB.OPTIMAL, GRB.INTERRUPTED):
+#     print(f"Nível 0 (turnos não alocados) -> valor: {m.ObjNVal}")
+#     for k in range(1, m.NumObj):
+#         m.params.ObjNumber = k
+#         print(f"  Nível {k} -> valor: {m.ObjNVal}")
 
-    print("\nAtribuições (x[e,(day,id)]=1):")
+#     print("\nAtribuições (x[e,(day,id)]=1):")
+#     for (e, s), var in x.items():
+#         if var.X > 0.5:
+#             print(f"  {e} -> {s}  (TT={TT_s[s]}, ST_turno={ST_s[s]}, v_es={v_es[(e,s)]:.2f})")
+
+#     print("\nTurnos não alocados (u[s]=1):")
+#     for s, var in u.items():
+#         if var.X > 0.5:
+#             print(f"  {s} (TT={TT_s[s]}, ST={ST_s[s]})")
+
+if m.status in (GRB.OPTIMAL, GRB.INTERRUPTED):
+    print("\nOtimização concluída com sucesso!")
+
+    # --- 1. Processar resultados nas estruturas de dados desejadas ---
+    
+    # Dicionário: { 'E-01': [s1, s2], 'E-02': [s3] }
+    alocacoes_por_empregado = {e: [] for e in E}
+    turnos_alocados_count = 0
+    
+    # Itera sobre as variáveis de alocação (x)
     for (e, s), var in x.items():
         if var.X > 0.5:
-            print(f"  {e} -> {s}  (TT={TT_s[s]}, ST_turno={ST_s[s]}, v_es={v_es[(e,s)]:.2f})")
+            alocacoes_por_empregado[e].append(s)
+            turnos_alocados_count += 1
 
-    print("\nTurnos não alocados (u[s]=1):")
+    # Lista: [s4, s5, ...]
+    turnos_nao_alocados = []
+    
+    # Itera sobre as variáveis de turnos não alocados (u)
     for s, var in u.items():
         if var.X > 0.5:
-            print(f"  {s} (TT={TT_s[s]}, ST={ST_s[s]})")
+            turnos_nao_alocados.append(s)
+
+    # --- 2. Imprimir a alocação de turnos (Usando as estruturas criadas) ---
+    print("\n--- Alocações por Empregado ---")
+    for e, alocados in alocacoes_por_empregado.items():
+        # Usando m_e[e] do seu script principal
+        print(f"  {e} ({len(alocados)} / {m_e[e]} turnos): {alocados}")
+
+    # --- 3. Verificar turnos não alocados (Usando as estruturas criadas) ---
+    print("\n--- Turnos NÃO Alocados ---")
+    if turnos_nao_alocados:
+        for s in turnos_nao_alocados:
+            # s é uma tupla (dia, id)
+            print(f"  Turno (Dia: {s[0]}, ID: {s[1]})")
+    else:
+        print("  Todos os turnos foram alocados!")
+        
+    # --- 4. Verificação final (Usando as estruturas criadas) ---
+    # Usando S (conjunto total de ocorrências de turnos) do seu script principal
+    print(f"\nVerificação: {turnos_alocados_count} turnos alocados, {len(turnos_nao_alocados)} não alocados. Total: {turnos_alocados_count + len(turnos_nao_alocados)} (de {len(S)})")
+    
+    # Salva o modelo (opcional, mas estava no seu exemplo)
+    m.write('model.lp')
+    print("\nModelo salvo em 'model.lp'")
+
+
+elif m.status == GRB.INFEASIBLE:
+    print("\nO modelo é inviável (INFEASIBLE).")
+    print("Computando IIS (Irreducible Inconsistent Subsystem) para depuração...")
+    m.computeIIS()
+    m.write("modelo_inviavel.ilp")
+    print("Arquivo 'modelo_inviavel.ilp' escrito. Verifique este arquivo para ver as restrições conflitantes.")
+
+elif m.status == GRB.INF_OR_UNBD:
+    print("\nO modelo é inviável ou ilimitado (INF_OR_UNBD).")
+
+else:
+    print(f"\nOtimização terminada com status: {m.status}")
